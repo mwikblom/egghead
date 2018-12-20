@@ -1,0 +1,11 @@
+docker network create egghead-net
+docker network inspect egghead-net
+docker run -p 8080:80 --name egghead-front --network egghead-net springio/egghead-front
+docker run --name egghead-service-a --network egghead-net springio/egghead-service-a
+docker run --name egghead-service-b --network egghead-net springio/egghead-service-b
+docker ps -a
+docker exec egghead-front ping egghead-service-a
+docker exec egghead-front wget http://egghead-service-a/API
+docker exec egghead-front ping egghead-service-a
+decker exec egghead-front wget http://egghead-service-b/API
+docker container prune
