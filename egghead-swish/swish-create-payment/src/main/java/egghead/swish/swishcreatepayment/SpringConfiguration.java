@@ -13,6 +13,7 @@ import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.receiver.ReceiverRecord;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
@@ -24,10 +25,17 @@ import java.util.Map;
  */
 @Configuration
 public class SpringConfiguration {
+
     @Value("${kafka.bootstrap.address}")
     private String bootstrapServers;
-
+    @Value("${kafka.swish.request.topic}")
+    private String swishRequestTopic;
     private Disposable kafkaConsumer;
+
+    @PostConstruct
+    public void setupKafkaConsumer() {
+        kafkaConsumer = this.createKafkaConsumer(swishRequestTopic);
+    }
 
     private ReceiverOptions<Integer, String> createReceiverOptions() {
         Map<String, Object> props = new ImmutableMap.Builder<String, Object>()
@@ -41,9 +49,14 @@ public class SpringConfiguration {
         return ReceiverOptions.create(props);
     }
 
-    private Disposable consumeMessages(String topic) {
-        ReceiverOptions<Integer, String> options = createReceiverOptions().subscription(Collections.singleton(topic));
-        Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options).receive();
+    private Disposable createKafkaConsumer(String topic) {
+
+        ReceiverOptions<Integer, String> options = createReceiverOptions()
+            .subscription(Collections.singleton(topic));
+
+        Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options)
+            .receive();
+
         return kafkaFlux.subscribe(record -> {
             ReceiverOffset offset = record.receiverOffset();
             System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
@@ -57,7 +70,7 @@ public class SpringConfiguration {
     }
 
     @PreDestroy
-    public void destroy() {
+    public void disposeKafkaConsumer() {
         kafkaConsumer.dispose();
     }
 }
