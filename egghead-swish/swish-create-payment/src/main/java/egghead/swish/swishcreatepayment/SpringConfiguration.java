@@ -1,9 +1,9 @@
 package egghead.swish.swishcreatepayment;
 
-import com.fasterxml.jackson.databind.deser.std.NumberDeserializers;
-import com.fasterxml.jackson.databind.deser.std.StringDeserializer;
 import com.google.common.collect.ImmutableMap;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.Disposable;
@@ -42,7 +42,7 @@ public class SpringConfiguration {
             .put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers)
             .put(ConsumerConfig.CLIENT_ID_CONFIG, "sample-consumer")
             .put(ConsumerConfig.GROUP_ID_CONFIG, "sample-group")
-            .put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, NumberDeserializers.IntegerDeserializer.class)
+            .put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class)
             .put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class)
             .put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
             .build();
