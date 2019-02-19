@@ -5,12 +5,18 @@ import com.fasterxml.jackson.databind.deser.std.StringDeserializer;
 import com.google.common.collect.ImmutableMap;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
 
+import javax.annotation.PreDestroy;
 import java.text.SimpleDateFormat;
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.Date;
 import java.util.Map;
 
 /**
@@ -18,10 +24,12 @@ import java.util.Map;
  */
 @Configuration
 public class SpringConfiguration {
-    @Value("")
+    @Value("${kafka.bootstrap.address}")
     private String bootstrapServers;
 
-    private ReceiverOptions create() {
+    private Disposable kafkaConsumer;
+
+    private ReceiverOptions<Integer, String> createReceiverOptions() {
         Map<String, Object> props = new ImmutableMap.Builder<String, Object>()
             .put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers)
             .put(ConsumerConfig.CLIENT_ID_CONFIG, "sample-consumer")
@@ -31,5 +39,25 @@ public class SpringConfiguration {
             .put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
             .build();
         return ReceiverOptions.create(props);
+    }
+
+    private Disposable consumeMessages(String topic) {
+        ReceiverOptions<Integer, String> options = createReceiverOptions().subscription(Collections.singleton(topic));
+        Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options).receive();
+        return kafkaFlux.subscribe(record -> {
+            ReceiverOffset offset = record.receiverOffset();
+            System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
+                offset.topicPartition(),
+                offset.offset(),
+                new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy").format(new Date(record.timestamp())),
+                record.key(),
+                record.value());
+            offset.acknowledge();
+        });
+    }
+
+    @PreDestroy
+    public void destroy() {
+        kafkaConsumer.dispose();
     }
 }
