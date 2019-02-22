@@ -2,9 +2,7 @@ package egghead.swish.swishcreatepayment;
 
 import com.google.common.collect.ImmutableMap;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -92,7 +90,10 @@ public class SpringConfiguration {
                 record.key(),
                 record.value());
             Mono<SenderRecord<Integer, String, Integer>> message = Mono.just(SenderRecord.create(swishResponseTopic, null, null, null, "Message_" + record.value(), null));
-            kafkaSender.send(message);
+            kafkaSender.send(message)
+                .subscribe(senderResult -> {
+
+                });
             offset.acknowledge();
         });
     }
