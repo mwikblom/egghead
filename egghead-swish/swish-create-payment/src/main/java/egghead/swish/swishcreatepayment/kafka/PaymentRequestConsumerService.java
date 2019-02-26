@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.Disposable;
+import reactor.core.publisher.ConnectableFlux;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -21,9 +23,8 @@ import reactor.util.function.Tuples;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import java.text.SimpleDateFormat;
+import java.time.Duration;
 import java.util.Collections;
-import java.util.Date;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
@@ -99,7 +100,6 @@ public class PaymentRequestConsumerService {
             .baseUrl("https://jsonplaceholder.typicode.com/")
             .build();
 
-
         return webClient.get()
             .uri(path)
             .retrieve()
@@ -136,21 +136,32 @@ public class PaymentRequestConsumerService {
         Mono<String> metaData = callDepositService(scheduler);
         return metaData
             .flatMap(foo -> callCreateDeposit(foo, scheduler, message, offset));
-
-/*        Mono<Tuple2<String, ReceiverOffset>> joinedMono = metaData
-            .zipWith(paymentRequestResponse, (orderInfo, paymentResponse) -> {
-                LOGGER.info("THREAD.ID: {}          Got orderInfo {} and payment value: {}", Thread.currentThread().getId(), orderInfo, paymentResponse.getT1());
-                return paymentResponse;
-        });*/
     }
 
-    private Mono<Tuple2<String, ReceiverOffset>> createBlockingCall(Scheduler scheduler, String message, ReceiverOffset offset) {
-        return Mono.fromCallable(() -> {
-            Thread.sleep(5000);
-            String value = message + " TESTO";
-            System.out.println("Thread is:" + Thread.currentThread().getName());
-            return Tuples.of(value, offset);
-        }).subscribeOn(scheduler);
+    private Flux<String> poll(String pollId, Scheduler scheduler) {
+        String path = "todos/1";
+        WebClient webClient = WebClient.builder()
+            .baseUrl("https://jsonplaceholder.typicode.com/")
+            .build();
+
+        Flux<Long> interval = Flux.interval(Duration.ofSeconds(2));
+
+        Mono<String> pollReq =
+            webClient.get()
+                .uri(path)
+                .retrieve()
+                .bodyToMono(Response.class)
+                .subscribeOn(scheduler)
+                .map(response -> {
+                    LOGGER.info("Poller - THREAD: {} Got poller response... {}", Thread.currentThread().getId(), pollId);
+                    return String.valueOf(pollId);
+                });
+
+        return Flux.from(interval)
+            .flatMap(y -> pollReq)
+            // Stop taking after 10 seconds. Here we can use "takeWhile" to check the objects status.
+            .take(Duration.ofSeconds(10))
+            .doFinally(x -> LOGGER.info("Done polling order: {}", pollId));
     }
 
     private Disposable createKafkaConsumer() {
@@ -159,16 +170,28 @@ public class PaymentRequestConsumerService {
 
         Scheduler scheduler = Schedulers.elastic();
 
-        return KafkaReceiver.create(options)
+        ConnectableFlux<Tuple2<String, ReceiverOffset>> flux = KafkaReceiver.create(options)
             .receive()
             .flatMap(record -> {
                 ReceiverOffset offset = record.receiverOffset();
                 // HTTP-blocking callCreateDeposit-ish.
                 return doPaymentChain(record.value(), offset);
+            }).publish();
+
+        // Starts poller
+        Flux.from(flux)
+            .flatMap(y -> {
+                String pollId = y.getT1();
+                return poll(pollId, scheduler);
             })
-            .map(value -> SenderRecord.create(new ProducerRecord<Integer, String>(swishProducerTopic, "Message: " + value.getT1()), value.getT2()))
+            .subscribe();
+
+        // Produces record to producer topic..
+        flux.map(value -> SenderRecord.create(new ProducerRecord<Integer, String>(swishProducerTopic, "Message: " + value.getT1()), value.getT2()))
             .as(kafkaSender::send)
             .subscribe();
+
+        return flux.connect();
     }
 
     @PreDestroy
