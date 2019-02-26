@@ -144,7 +144,8 @@ public class PaymentRequestConsumerService {
             .baseUrl("https://jsonplaceholder.typicode.com/")
             .build();
 
-        Flux<Long> interval = Flux.interval(Duration.ofSeconds(2));
+        // Wait 5 seconds before starting. Then we poll every 2 seconds
+        Flux<Long> interval = Flux.interval(Duration.ofSeconds(5), Duration.ofSeconds(2));
 
         Mono<String> pollReq =
             webClient.get()
@@ -159,8 +160,10 @@ public class PaymentRequestConsumerService {
 
         return Flux.from(interval)
             .flatMap(y -> pollReq)
-            // Stop taking after 10 seconds. Here we can use "takeWhile" to check the objects status.
-            .take(Duration.ofSeconds(10))
+            // Here we should check polling-status. Now we just say if Response == stop, then we stop.
+            .takeWhile(y -> !y.equals("stop"))
+            // Poll for 15 seconds.
+            .take(Duration.ofSeconds(15))
             .doFinally(x -> LOGGER.info("Done polling order: {}", pollId));
     }
 
@@ -177,6 +180,7 @@ public class PaymentRequestConsumerService {
                 // HTTP-blocking callCreateDeposit-ish.
                 return doPaymentChain(record.value(), offset);
             }).publish();
+
 
         // Starts poller
         Flux.from(flux)
