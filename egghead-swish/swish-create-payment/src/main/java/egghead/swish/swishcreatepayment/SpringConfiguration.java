@@ -81,6 +81,20 @@ public class SpringConfiguration {
         Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options)
             .receive();
 
+        Flux<SenderRecord<Integer, String, Integer>> outFlux = kafkaFlux.map(record -> {
+            ReceiverOffset offset = record.receiverOffset();
+            System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
+                offset.topicPartition(),
+                offset.offset(),
+                new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy").format(new Date(record.timestamp())),
+                record.key(),
+                record.value());
+            return SenderRecord.create(swishResponseTopic, null, null, null, "Message_" + record.value(), null);
+        });
+
+        outFlux.as(x -> kafkaSender.send(x));
+
+
         return kafkaFlux.subscribe(record -> {
             ReceiverOffset offset = record.receiverOffset();
             System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
