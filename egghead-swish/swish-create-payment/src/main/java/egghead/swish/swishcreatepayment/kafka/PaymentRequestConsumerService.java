@@ -5,8 +5,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.reactive.ClientHttpConnector;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -24,6 +24,7 @@ import javax.annotation.PreDestroy;
 import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class PaymentRequestConsumerService {
@@ -33,6 +34,46 @@ public class PaymentRequestConsumerService {
     private final String swishProducerTopic;
     private final String swishConsumerTopic;
     private Disposable kafkaConsumer;
+    private AtomicInteger counter = new AtomicInteger();
+
+    public static class Response {
+        private long userId;
+        private long id;
+        private String title;
+        private boolean completed;
+
+        public long getUserId() {
+            return userId;
+        }
+
+        public void setUserId(long userId) {
+            this.userId = userId;
+        }
+
+        public long getId() {
+            return id;
+        }
+
+        public void setId(long id) {
+            this.id = id;
+        }
+
+        public String getTitle() {
+            return title;
+        }
+
+        public void setTitle(String title) {
+            this.title = title;
+        }
+
+        public boolean isCompleted() {
+            return completed;
+        }
+
+        public void setCompleted(boolean completed) {
+            this.completed = completed;
+        }
+    }
 
     @Autowired
     public PaymentRequestConsumerService(KafkaSender<Integer, String> kafkaSender,
@@ -52,10 +93,55 @@ public class PaymentRequestConsumerService {
         LOGGER.info("Created.");
     }
 
-    private Mono<String> call() {
+    private Mono<String> callDepositService(Scheduler scheduler) {
+        String path = "todos/1";
+        WebClient webClient = WebClient.builder()
+            .baseUrl("https://jsonplaceholder.typicode.com/")
+            .build();
 
 
-        return null;
+        return webClient.get()
+            .uri(path)
+            .retrieve()
+            .bodyToMono(Response.class)
+            .subscribeOn(scheduler)
+            .map(response -> {
+                Integer currentCount = counter.getAndIncrement();
+                LOGGER.info("getOrderInfo - THREAD-ID: {}, OrderId {}:", Thread.currentThread().getId(), currentCount);
+                return String.valueOf(currentCount);
+            });
+    }
+
+    private Mono<Tuple2<String, ReceiverOffset>> callCreateDeposit(String orderId, Scheduler scheduler, String message, ReceiverOffset offset) {
+        String path = "todos/1";
+        WebClient webClient = WebClient.builder()
+            .baseUrl("https://jsonplaceholder.typicode.com/")
+            .build();
+
+        return webClient.get()
+            .uri(path)
+            .retrieve()
+            .bodyToMono(Response.class)
+            .subscribeOn(scheduler)
+            .map(response -> {
+                String value = String.format("Title: %s. Original message: %s", response.getTitle(), message);
+                LOGGER.info("CreateDeposit - THREAD.ID {}, ORDER-ID {}, MESSAGE: {}", Thread.currentThread().getId(), orderId, message);
+
+                return Tuples.of(value, offset);
+            });
+    }
+
+    private Mono<Tuple2<String, ReceiverOffset>> doPaymentChain(String message, ReceiverOffset offset) {
+        Scheduler scheduler = Schedulers.elastic();
+        Mono<String> metaData = callDepositService(scheduler);
+        return metaData
+            .flatMap(foo -> callCreateDeposit(foo, scheduler, message, offset));
+
+/*        Mono<Tuple2<String, ReceiverOffset>> joinedMono = metaData
+            .zipWith(paymentRequestResponse, (orderInfo, paymentResponse) -> {
+                LOGGER.info("THREAD.ID: {}          Got orderInfo {} and payment value: {}", Thread.currentThread().getId(), orderInfo, paymentResponse.getT1());
+                return paymentResponse;
+        });*/
     }
 
     private Mono<Tuple2<String, ReceiverOffset>> createBlockingCall(Scheduler scheduler, String message, ReceiverOffset offset) {
@@ -75,22 +161,14 @@ public class PaymentRequestConsumerService {
 
         return KafkaReceiver.create(options)
             .receive()
-            .map(record -> {
+            .flatMap(record -> {
                 ReceiverOffset offset = record.receiverOffset();
-                System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
-                    offset.topicPartition(),
-                    offset.offset(),
-                    new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy").format(new Date(record.timestamp())),
-                    record.key(),
-                    record.value());
-
-                // HTTP-blocking call-ish.
-                return createBlockingCall(scheduler, record.value(), offset);
+                // HTTP-blocking callCreateDeposit-ish.
+                return doPaymentChain(record.value(), offset);
             })
-            .subscribe(publisher -> publisher
-                .map(value -> SenderRecord.create(new ProducerRecord<Integer, String>(swishProducerTopic, "Message: " + value.getT1()), value.getT2()))
-                .as(kafkaSender::send)
-                .subscribe());
+            .map(value -> SenderRecord.create(new ProducerRecord<Integer, String>(swishProducerTopic, "Message: " + value.getT1()), value.getT2()))
+            .as(kafkaSender::send)
+            .subscribe();
     }
 
     @PreDestroy
