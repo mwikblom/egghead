@@ -93,11 +93,9 @@ public class SpringConfiguration {
             return SenderRecord.create(new ProducerRecord<>(swishResponseTopic, "Message_" + record.value()), offset);
         });
 
-        outFlux
-            .as(kafkaSender::send)
-            .doOnNext(senderResult -> senderResult.correlationMetadata().acknowledge());
-
-        return null;
+        return outFlux.as(kafkaSender::send)
+            .doOnNext(senderResult -> senderResult.correlationMetadata().acknowledge())
+            .subscribe();
 
 
         /*Flux<ProducerRecord<Integer, String>> outFlux = receiverFlux.map(record -> {
