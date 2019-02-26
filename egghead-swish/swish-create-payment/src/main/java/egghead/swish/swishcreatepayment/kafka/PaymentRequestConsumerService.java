@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.reactive.ClientHttpConnector;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
@@ -49,6 +50,12 @@ public class PaymentRequestConsumerService {
         LOGGER.info("Starting Kafka Consumer For Deposit Requests");
         kafkaConsumer = createKafkaConsumer();
         LOGGER.info("Created.");
+    }
+
+    private Mono<String> call() {
+
+
+        return null;
     }
 
     private Mono<Tuple2<String, ReceiverOffset>> createBlockingCall(Scheduler scheduler, String message, ReceiverOffset offset) {
