@@ -3,6 +3,7 @@ package egghead.swish.swishcreatepayment;
 import com.google.common.collect.ImmutableMap;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -12,7 +13,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -47,6 +47,7 @@ public class SpringConfiguration {
 
     @PostConstruct
     public void setupKafkaConsumer() {
+        getKafkaSender(); // TODO
         kafkaConsumer = this.createKafkaConsumer(swishRequestTopic);
     }
 
@@ -78,10 +79,28 @@ public class SpringConfiguration {
         ReceiverOptions<Integer, String> options = createReceiverOptions()
             .subscription(Collections.singleton(topic));
 
-        Flux<ReceiverRecord<Integer, String>> kafkaFlux = KafkaReceiver.create(options)
+        Flux<ReceiverRecord<Integer, String>> receiverFlux = KafkaReceiver.create(options)
             .receive();
 
-        Flux<SenderRecord<Integer, String, Integer>> outFlux = kafkaFlux.map(record -> {
+        Flux<SenderRecord<Integer, String, ReceiverOffset>> outFlux = receiverFlux.map(record -> {
+            ReceiverOffset offset = record.receiverOffset();
+            System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
+                offset.topicPartition(),
+                offset.offset(),
+                new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy").format(new Date(record.timestamp())),
+                record.key(),
+                record.value());
+            return SenderRecord.create(new ProducerRecord<>(swishResponseTopic, "Message_" + record.value()), offset);
+        });
+
+        outFlux
+            .as(kafkaSender::send)
+            .doOnNext(senderResult -> senderResult.correlationMetadata().acknowledge());
+
+        return null;
+
+
+        /*Flux<ProducerRecord<Integer, String>> outFlux = receiverFlux.map(record -> {
             ReceiverOffset offset = record.receiverOffset();
             System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
                 offset.topicPartition(),
@@ -92,10 +111,13 @@ public class SpringConfiguration {
             return SenderRecord.create(swishResponseTopic, null, null, null, "Message_" + record.value(), null);
         });
 
-        outFlux.as(x -> kafkaSender.send(x));
+        outFlux
+            .as(producerRecordFlux -> kafkaSender.send(producerRecordFlux))
+            .doOnNext(senderResult -> senderResult.correlationMetadata().acknowledge())
+            .doOnCancel(() -> close());
 
 
-        return kafkaFlux.subscribe(record -> {
+        return receiverFlux.subscribe(record -> {
             ReceiverOffset offset = record.receiverOffset();
             System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
                 offset.topicPartition(),
@@ -109,7 +131,7 @@ public class SpringConfiguration {
 
                 });
             offset.acknowledge();
-        });
+        });*/
     }
 
     @Bean
@@ -120,7 +142,9 @@ public class SpringConfiguration {
 
     @PreDestroy
     public void disposeKafkaConsumer() {
-        kafkaConsumer.dispose();
+        if (kafkaConsumer != null) {
+            kafkaConsumer.dispose();
+        }
     }
 
     @PreDestroy
