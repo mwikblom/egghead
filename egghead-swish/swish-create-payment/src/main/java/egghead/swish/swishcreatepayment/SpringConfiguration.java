@@ -13,6 +13,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
@@ -27,6 +29,7 @@ import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author mikael
@@ -82,7 +85,11 @@ public class SpringConfiguration {
         Flux<ReceiverRecord<Integer, String>> receiverFlux = KafkaReceiver.create(options)
             .receive();
 
-        Flux<SenderRecord<Integer, String, ReceiverOffset>> outFlux = receiverFlux.map(record -> {
+        Scheduler scheduler = Schedulers.elastic();
+
+        Flux<SenderRecord<Integer, String, ReceiverOffset>> outFlux = receiverFlux
+            .subscribeOn(scheduler)
+            .map(record -> {
             ReceiverOffset offset = record.receiverOffset();
             System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
                 offset.topicPartition(),
@@ -90,14 +97,21 @@ public class SpringConfiguration {
                 new SimpleDateFormat("HH:mm:ss:SSS z dd MMM yyyy").format(new Date(record.timestamp())),
                 record.key(),
                 record.value());
+
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
             return SenderRecord.create(new ProducerRecord<>(swishResponseTopic, "Message_" + record.value()), offset);
         });
 
-        return outFlux.as(kafkaSender::send)
+        return outFlux
+            .as(kafkaSender::send)
+            .publishOn(scheduler)
             .doOnNext(senderResult -> senderResult.correlationMetadata().acknowledge())
-            .subscribe();
-
-
+            .subscribe(value -> System.out.println("Current thread is: " + Thread.currentThread().getName()));
         /*Flux<ProducerRecord<Integer, String>> outFlux = receiverFlux.map(record -> {
             ReceiverOffset offset = record.receiverOffset();
             System.out.printf("Received message: topic-partition=%s offset=%d timestamp=%s key=%d value=%s\n",
