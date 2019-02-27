@@ -182,12 +182,10 @@ public class PaymentRequestConsumerService {
             }).publish();
 
         // Starts poller
-        Flux.from(flux)
-            .flatMap(y -> {
-                String pollId = y.getT1();
-                return poll(pollId, scheduler);
-            })
-            .subscribe();
+        Flux.from(flux).flatMap(y -> {
+            String pollId = y.getT1();
+            return poll(pollId, scheduler);
+        }).subscribe();
 
         // Produces record to producer topic..
         flux.map(value -> SenderRecord.create(new ProducerRecord<Integer, String>(swishProducerTopic, "Message: " + value.getT1()), value.getT2()))
