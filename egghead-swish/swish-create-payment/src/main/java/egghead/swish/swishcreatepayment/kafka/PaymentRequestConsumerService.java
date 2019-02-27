@@ -1,5 +1,8 @@
 package egghead.swish.swishcreatepayment.kafka;
 
+import egghead.swish.swishcreatepayment.kafka.model.SwishDepositRequest;
+import egghead.swish.swishcreatepayment.kafka.model.UiCreatePaymentResponse;
+import egghead.swish.swishcreatepayment.kafka.model.WorkflowDepositFinalizedResponse;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,11 +33,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class PaymentRequestConsumerService {
     private final static Logger LOGGER = LoggerFactory.getLogger(PaymentRequestConsumerService.class);
-    private final KafkaSender<Integer, String> kafkaSender;
-    private final ReceiverOptions<Integer, String> receiverOptions;
-    private final String swishProducerTopic;
-    private final String swishConsumerTopic;
-    private Disposable kafkaConsumer;
+
+    private final KafkaSender<Integer, UiCreatePaymentResponse> kafkaSenderForUiCreatePaymentResponse;
+    private final KafkaSender<Integer, WorkflowDepositFinalizedResponse> kafkaSenderForWorkflowDepositFinalizedResponse;
+    private final String swishDepositRequestTopic;
+    private final String uiCreatePaymentResponseTopic;
+    private final String workflowDepositFinalizedResponseTopic;
+    private final ReceiverOptions<Integer, SwishDepositRequest> receiverOptionsForSwishDepositRequest;
+
+    private Disposable kafkaConsumerForSwishDepositRequest;
     private AtomicInteger counter = new AtomicInteger();
 
     public static class Response {
@@ -77,20 +84,24 @@ public class PaymentRequestConsumerService {
     }
 
     @Autowired
-    public PaymentRequestConsumerService(KafkaSender<Integer, String> kafkaSender,
-                                         @Value("${kafka.swish.response.topic}") String swishProducerTopic,
-                                         @Value("${kafka.swish.request.topic}") String swishConsumerTopic,
-                                         ReceiverOptions<Integer, String> receiverOptions) {
-        this.kafkaSender = kafkaSender;
-        this.swishProducerTopic = swishProducerTopic;
-        this.swishConsumerTopic = swishConsumerTopic;
-        this.receiverOptions = receiverOptions;
+    public PaymentRequestConsumerService(KafkaSender<Integer, UiCreatePaymentResponse> kafkaSenderForUiCreatePaymentResponse,
+                                         KafkaSender<Integer, WorkflowDepositFinalizedResponse> kafkaSenderForWorkflowDepositFinalizedResponse,
+                                         @Value("${trustly.swish.SwishDepositRequest.topic}") String swishDepositRequestTopic,
+                                         @Value("${trustly.swish.UiCreatePaymentResponse.topic}") String uiCreatePaymentResponseTopic,
+                                         @Value("${trustly.swish.WorkflowDepositFinalizedResponse.topic}") String workflowDepositFinalizedResponseTopic,
+                                         ReceiverOptions<Integer, SwishDepositRequest> receiverOptionsForSwishDepositRequest) {
+        this.kafkaSenderForUiCreatePaymentResponse = kafkaSenderForUiCreatePaymentResponse;
+        this.kafkaSenderForWorkflowDepositFinalizedResponse = kafkaSenderForWorkflowDepositFinalizedResponse;
+        this.swishDepositRequestTopic = swishDepositRequestTopic;
+        this.uiCreatePaymentResponseTopic = uiCreatePaymentResponseTopic;
+        this.workflowDepositFinalizedResponseTopic = workflowDepositFinalizedResponseTopic;
+        this.receiverOptionsForSwishDepositRequest = receiverOptionsForSwishDepositRequest;
     }
 
     @PostConstruct
     private void initKafkaConsumer() {
         LOGGER.info("Starting Kafka Consumer For Deposit Requests");
-        kafkaConsumer = createKafkaConsumer();
+        kafkaConsumerForSwishDepositRequest = createKafkaConsumer();
         LOGGER.info("Created.");
     }
 
@@ -168,8 +179,8 @@ public class PaymentRequestConsumerService {
     }
 
     private Disposable createKafkaConsumer() {
-        ReceiverOptions<Integer, String> options = receiverOptions
-            .subscription(Collections.singleton(swishConsumerTopic));
+        ReceiverOptions<Integer, SwishDepositRequest> options = receiverOptionsForSwishDepositRequest
+            .subscription(Collections.singleton(swishDepositRequestTopic));
 
         Scheduler scheduler = Schedulers.elastic();
 
@@ -177,8 +188,12 @@ public class PaymentRequestConsumerService {
             .receive()
             .flatMap(record -> {
                 ReceiverOffset offset = record.receiverOffset();
+                SwishDepositRequest swishDepositRequest = record.value();
+
+                LOGGER.info("Received Swish deposit request: {}", swishDepositRequest);
+
                 // HTTP-blocking callCreateDeposit-ish.
-                return doPaymentChain(record.value(), offset);
+                return doPaymentChain(swishDepositRequest.getOrderId(), offset);
             }).publish();
 
         // Starts poller
@@ -188,8 +203,13 @@ public class PaymentRequestConsumerService {
         }).subscribe();
 
         // Produces record to producer topic..
-        flux.map(value -> SenderRecord.create(new ProducerRecord<Integer, String>(swishProducerTopic, "Message: " + value.getT1()), value.getT2()))
-            .as(kafkaSender::send)
+        flux.map(value -> {
+            UiCreatePaymentResponse uiCreatePaymentResponse = new UiCreatePaymentResponse();
+            uiCreatePaymentResponse.setOrderId(value.getT1());
+
+            return SenderRecord.create(new ProducerRecord<Integer, UiCreatePaymentResponse>(uiCreatePaymentResponseTopic, uiCreatePaymentResponse), value.getT2());
+        })
+            .as(kafkaSenderForUiCreatePaymentResponse::send)
             .subscribe();
 
         return flux.connect();
@@ -197,13 +217,13 @@ public class PaymentRequestConsumerService {
 
     @PreDestroy
     private void disposeKafkaConsumer() {
-        if (kafkaConsumer != null) {
-            kafkaConsumer.dispose();
+        if (kafkaConsumerForSwishDepositRequest != null) {
+            kafkaConsumerForSwishDepositRequest.dispose();
         }
     }
 
     @PreDestroy
     public void closeKafkaSender() {
-        kafkaSender.close();
+        kafkaSenderForUiCreatePaymentResponse.close();
     }
 }
