@@ -124,10 +124,10 @@ public class PaymentRequestConsumerService {
             .bodyToMono(Response.class)
             .subscribeOn(scheduler)
             .map(response -> {
-                String value = String.format("Title: %s. Original message: %s", response.getTitle(), message);
                 LOGGER.info("CreateDeposit - THREAD.ID {}, ORDER-ID {}, MESSAGE: {}", Thread.currentThread().getId(), orderId, message);
 
-                return Tuples.of(value, offset);
+                // TODO .. should be response Location.
+                return Tuples.of(orderId, offset);
             });
     }
 
@@ -154,7 +154,7 @@ public class PaymentRequestConsumerService {
                 .bodyToMono(Response.class)
                 .subscribeOn(scheduler)
                 .map(response -> {
-                    LOGGER.info("Poller - THREAD: {} Got poller response... {}", Thread.currentThread().getId(), pollId);
+                    LOGGER.info("Poller - THREAD-ID: {}  Response ORDER-ID: {}", Thread.currentThread().getId(), pollId);
                     return String.valueOf(pollId);
                 });
 
@@ -180,7 +180,6 @@ public class PaymentRequestConsumerService {
                 // HTTP-blocking callCreateDeposit-ish.
                 return doPaymentChain(record.value(), offset);
             }).publish();
-
 
         // Starts poller
         Flux.from(flux)
