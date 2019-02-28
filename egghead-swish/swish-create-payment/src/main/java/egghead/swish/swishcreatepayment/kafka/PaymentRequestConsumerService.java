@@ -125,8 +125,8 @@ public class PaymentRequestConsumerService {
 
         Mono<DepositOrder> callDepositService = callDepositService(scheduler, swishDepositKafkaRequest);
         return callDepositService
-            .flatMap(depositOrder -> Tuples.of(depositOrder, callSwishPaymentRequest(scheduler, swishDepositKafkaRequest, depositOrder)))
-            .flatMap(depositOrderAndCreatePaymentRequestResponse -> Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrderAndCreatePaymentRequestResponse.));
+            .zipWhen(depositOrder -> callSwishPaymentRequest(scheduler, swishDepositKafkaRequest, depositOrder), (grej1, grej2) -> )
+            .flatMap(depositOrderAndCreatePaymentRequestResponse -> Mono.just(Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrderAndCreatePaymentRequestResponse.getT1(), depositOrderAndCreatePaymentRequestResponse.getT2())));
     }
 
     private Flux<SwishPaymentStatus> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrder depositOrder, CreatePaymentRequestResponse swishPaymentRequest) {
