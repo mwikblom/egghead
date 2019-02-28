@@ -1,7 +1,8 @@
 package egghead.swish.swishcreatepayment.kafka;
 
 import egghead.swish.swishcreatepayment.deposit.model.DepositOrder;
-import egghead.swish.swishcreatepayment.integration.model.SwishPaymentRequest;
+import egghead.swish.swishcreatepayment.integration.SwishApi;
+import egghead.swish.swishcreatepayment.integration.model.CreatePaymentRequestResponse;
 import egghead.swish.swishcreatepayment.integration.model.SwishPaymentStatus;
 import egghead.swish.swishcreatepayment.kafka.model.SwishDepositKafkaRequest;
 import egghead.swish.swishcreatepayment.kafka.model.UiCreatePaymentKafkaResponse;
@@ -33,7 +34,6 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Currency;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class PaymentRequestConsumerService {
@@ -45,6 +45,7 @@ public class PaymentRequestConsumerService {
     private final String uiCreatePaymentResponseTopic;
     private final String workflowDepositFinalizedResponseTopic;
     private final ReceiverOptions<Integer, SwishDepositKafkaRequest> receiverOptionsForSwishDepositRequest;
+    private final SwishApi swishApi;
 
     private Disposable kafkaConsumerForSwishDepositRequest;
 
@@ -54,13 +55,15 @@ public class PaymentRequestConsumerService {
                                          @Value("${trustly.swish.SwishDepositRequest.topic}") String swishDepositRequestTopic,
                                          @Value("${trustly.swish.UiCreatePaymentResponse.topic}") String uiCreatePaymentResponseTopic,
                                          @Value("${trustly.swish.WorkflowDepositFinalizedResponse.topic}") String workflowDepositFinalizedResponseTopic,
-                                         ReceiverOptions<Integer, SwishDepositKafkaRequest> receiverOptionsForSwishDepositRequest) {
+                                         ReceiverOptions<Integer, SwishDepositKafkaRequest> receiverOptionsForSwishDepositRequest,
+                                         SwishApi swishApi) {
         this.kafkaSenderForUiCreatePaymentResponse = kafkaSenderForUiCreatePaymentResponse;
         this.kafkaSenderForWorkflowDepositFinalizedResponse = kafkaSenderForWorkflowDepositFinalizedResponse;
         this.swishDepositRequestTopic = swishDepositRequestTopic;
         this.uiCreatePaymentResponseTopic = uiCreatePaymentResponseTopic;
         this.workflowDepositFinalizedResponseTopic = workflowDepositFinalizedResponseTopic;
         this.receiverOptionsForSwishDepositRequest = receiverOptionsForSwishDepositRequest;
+        this.swishApi = swishApi;
     }
 
     @PostConstruct
@@ -98,13 +101,16 @@ public class PaymentRequestConsumerService {
             });
     }
 
-    private Mono<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrder, SwishPaymentRequest>> callSwishPaymentRequest(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, ReceiverOffset receiverOffset, DepositOrder depositOrder) {
+    private Mono<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrder, CreatePaymentRequestResponse>> callSwishPaymentRequest(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, ReceiverOffset receiverOffset, DepositOrder depositOrder) {
         String path = "todos/1";
         WebClient webClient = WebClient.builder()
             .baseUrl("https://jsonplaceholder.typicode.com/")
             .build();
 
         // TODO create request to swish using depositServiceResponse
+
+        swishApi.callCreatePaymentRequest(scheduler, new Paymentj)
+
 
         return webClient.get()
             .uri(path)
@@ -114,7 +120,7 @@ public class PaymentRequestConsumerService {
             .map(response -> {
 
                 // fake some data
-                SwishPaymentRequest swishPaymentRequest = new SwishPaymentRequest();
+                CreatePaymentRequestResponse swishPaymentRequest = new CreatePaymentRequestResponse();
                 swishPaymentRequest.setAutoStartToken("aAutoStartToken");
                 swishPaymentRequest.setLocation("https://swishit.se/theLocation");
 
@@ -124,7 +130,7 @@ public class PaymentRequestConsumerService {
             });
     }
 
-    private Mono<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrder, SwishPaymentRequest>> doSwishDepositChain(SwishDepositKafkaRequest swishDepositKafkaRequest, ReceiverOffset receiverOffset) {
+    private Mono<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrder, CreatePaymentRequestResponse>> doSwishDepositChain(SwishDepositKafkaRequest swishDepositKafkaRequest, ReceiverOffset receiverOffset) {
 
         // TODO correct scheduler
         Scheduler scheduler = Schedulers.elastic();
@@ -134,7 +140,7 @@ public class PaymentRequestConsumerService {
             .flatMap(depositOrder -> callSwishPaymentRequest(scheduler, swishDepositKafkaRequest, receiverOffset, depositOrder));
     }
 
-    private Flux<SwishPaymentStatus> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrder depositOrder, SwishPaymentRequest swishPaymentRequest) {
+    private Flux<SwishPaymentStatus> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrder depositOrder, CreatePaymentRequestResponse swishPaymentRequest) {
         String path = "todos/1";
         WebClient webClient = WebClient.builder()
             .baseUrl("https://jsonplaceholder.typicode.com/")
@@ -177,7 +183,7 @@ public class PaymentRequestConsumerService {
         // TODO correct scheduler
         Scheduler scheduler = Schedulers.elastic();
 
-        ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrder, SwishPaymentRequest>> flux = KafkaReceiver.create(options)
+        ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrder, CreatePaymentRequestResponse>> flux = KafkaReceiver.create(options)
             .receive()
             .flatMap(record -> {
                 ReceiverOffset receiverOffset = record.receiverOffset();
@@ -194,7 +200,7 @@ public class PaymentRequestConsumerService {
             .flatMap(swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest -> {
                 SwishDepositKafkaRequest swishDepositKafkaRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT1();
                 DepositOrder depositOrder = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
-                SwishPaymentRequest swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
+                CreatePaymentRequestResponse swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
 
                 return pollSwishPaymentStatus(scheduler, swishDepositKafkaRequest, depositOrder, swishPaymentRequest);
             })
@@ -203,15 +209,15 @@ public class PaymentRequestConsumerService {
         // Produces record to producer topic..
         flux
             .map(swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest -> {
-                SwishPaymentRequest swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
+                CreatePaymentRequestResponse swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
                 DepositOrder depositOrder = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
                 ReceiverOffset receiverOffset = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT2();
 
                 UiCreatePaymentKafkaResponse uiCreatePaymentResponse = new UiCreatePaymentKafkaResponse();
                 uiCreatePaymentResponse.setOrderId(depositOrder.getOrderId());
-                if (swishPaymentRequest.getAutoStartToken() != null) {
-                    uiCreatePaymentResponse.setAutoStartToken(swishPaymentRequest.getAutoStartToken());
-                    uiCreatePaymentResponse.setOpenSwishUrl("swish://" + swishPaymentRequest.getAutoStartToken()); // TODO correct
+                if (swishPaymentRequest.getPaymentRequestToken() != null) {
+                    uiCreatePaymentResponse.setAutoStartToken(swishPaymentRequest.getPaymentRequestToken());
+                    uiCreatePaymentResponse.setOpenSwishUrl("swish://" + swishPaymentRequest.getPaymentRequestToken()); // TODO correct
                 }
 
                 return SenderRecord.create(new ProducerRecord<Integer, UiCreatePaymentKafkaResponse>(uiCreatePaymentResponseTopic, uiCreatePaymentResponse), receiverOffset);

@@ -1,8 +1,10 @@
 package egghead.swish.swishcreatepayment.integration;
 
+import egghead.swish.swishcreatepayment.integration.model.CreatePaymentRequestResponse;
 import egghead.swish.swishcreatepayment.integration.model.PaymentRequestObject;
-import egghead.swish.swishcreatepayment.integration.model.SwishPaymentRequest;
 import io.netty.handler.ssl.SslContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -13,13 +15,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.netty.http.client.HttpClient;
-import reactor.util.function.Tuples;
-
-import javax.annotation.PreDestroy;
 
 @Service
 public class SwishApi {
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(SwishApi.class);
     private static final String PAYMENT_REQUEST_PATH = "paymentrequests";
 
     private final WebClient webClient;
@@ -43,9 +42,8 @@ public class SwishApi {
             .build();
     }
 
-    public Mono callCreatePaymentRequest(Scheduler scheduler, PaymentRequestObject paymentRequestObject) {
-
-        Mono<String> req = webClient
+    public Mono<CreatePaymentRequestResponse> callCreatePaymentRequest(Scheduler scheduler, PaymentRequestObject paymentRequestObject) {
+        return webClient
             .post()
             .uri(PAYMENT_REQUEST_PATH)
             .accept(MediaType.APPLICATION_JSON)
@@ -55,40 +53,13 @@ public class SwishApi {
             .subscribeOn(scheduler)
             .map(response -> {
                 HttpHeaders headers = response.headers().asHttpHeaders();
-                headers.get("Location");
+                String location = headers.getFirst("Location");
+                String paymentRequestToken = headers.getFirst("PaymentRequestToken");
                 LOGGER.info("Got respose {}", headers.get("Location"));
-                return headers.toString();
-                // TODO .. should be response Location.
+
+                return new CreatePaymentRequestResponse(location, paymentRequestToken);
             }).doOnError(err -> {
                 LOGGER.warn("Got error {}", err);
-            })
-            .flatMap(y -> {
-                LOGGER.info("Got response {}", y);
-                return Mono.just(y);
             });
-
-        String path = "todos/1";
-        WebClient webClient = WebClient.builder()
-            .baseUrl("https://jsonplaceholder.typicode.com/")
-            .build();
-
-        // TODO create request to swish using depositServiceResponse
-
-        return webClient.get()
-            .uri(path)
-            .retrieve()
-            .bodyToMono(SwishPaymentRequest.class)
-            .subscribeOn(scheduler)
-            .map(response -> {
-
-                // fake some data
-                SwishPaymentRequest swishPaymentRequest = new SwishPaymentRequest();
-                swishPaymentRequest.setAutoStartToken("aAutoStartToken");
-                swishPaymentRequest.setLocation("https://swishit.se/theLocation");
-
-                LOGGER.info("callSwishPaymentRequest - THREAD.ID {}: {}", Thread.currentThread().getId(), swishPaymentRequest);
-
-                return Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, swishPaymentRequest);
-            });''
     }
 }
