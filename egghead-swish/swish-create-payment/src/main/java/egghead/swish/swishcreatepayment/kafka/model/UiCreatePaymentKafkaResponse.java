@@ -14,7 +14,7 @@ import java.util.Objects;
  *
  * @author mikael
  */
-public class UiCreatePaymentResponse {
+public class UiCreatePaymentKafkaResponse {
 
     private String orderId;
     private String autoStartToken;
@@ -52,7 +52,7 @@ public class UiCreatePaymentResponse {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        UiCreatePaymentResponse that = (UiCreatePaymentResponse) o;
+        UiCreatePaymentKafkaResponse that = (UiCreatePaymentKafkaResponse) o;
         return Objects.equals(orderId, that.orderId) &&
             Objects.equals(autoStartToken, that.autoStartToken) &&
             Objects.equals(openSwishUrl, that.openSwishUrl);
@@ -72,7 +72,7 @@ public class UiCreatePaymentResponse {
             '}';
     }
 
-    public static class ResponseSerializer implements Serializer<UiCreatePaymentResponse> {
+    public static class ResponseSerializer implements Serializer<UiCreatePaymentKafkaResponse> {
 
         private Charset charset;
 
@@ -82,7 +82,7 @@ public class UiCreatePaymentResponse {
         }
 
         @Override
-        public byte[] serialize(String topic, UiCreatePaymentResponse data) {
+        public byte[] serialize(String topic, UiCreatePaymentKafkaResponse data) {
             String asString;
 
             try {

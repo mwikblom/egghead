@@ -9,14 +9,23 @@ import java.util.Objects;
  *
  * @author mikael
  */
-public class DepositServiceResponse {
+public class DepositOrder {
 
+    private String orderId;
     private BigDecimal amount;
     private Currency currency;
     private String messageOnStatement;
     private boolean isMobile;
     private String payerPhoneNumber;
     private String merchantSwishAlias;
+
+    public String getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(String orderId) {
+        this.orderId = orderId;
+    }
 
     public BigDecimal getAmount() {
         return amount;
@@ -68,15 +77,15 @@ public class DepositServiceResponse {
 
     @Override
     public boolean equals(Object o) {
-
         if (this == o) {
             return true;
         }
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        DepositServiceResponse that = (DepositServiceResponse) o;
+        DepositOrder that = (DepositOrder) o;
         return isMobile == that.isMobile &&
+            Objects.equals(orderId, that.orderId) &&
             Objects.equals(amount, that.amount) &&
             Objects.equals(currency, that.currency) &&
             Objects.equals(messageOnStatement, that.messageOnStatement) &&
@@ -86,13 +95,14 @@ public class DepositServiceResponse {
 
     @Override
     public int hashCode() {
-        return Objects.hash(amount, currency, messageOnStatement, isMobile, payerPhoneNumber, merchantSwishAlias);
+        return Objects.hash(orderId, amount, currency, messageOnStatement, isMobile, payerPhoneNumber, merchantSwishAlias);
     }
 
     @Override
     public String toString() {
         return "DepositServiceResponse{" +
-            "amount=" + amount +
+            "orderId='" + orderId + '\'' +
+            ", amount=" + amount +
             ", currency=" + currency +
             ", messageOnStatement='" + messageOnStatement + '\'' +
             ", isMobile=" + isMobile +

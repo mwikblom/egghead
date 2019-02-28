@@ -14,7 +14,7 @@ import java.util.Objects;
  *
  * @author mikael
  */
-public class WorkflowDepositFinalizedResponse {
+public class WorkflowDepositFinalizedKafkaResponse {
 
     // TODO
     public enum DepositOrderState {
@@ -50,7 +50,7 @@ public class WorkflowDepositFinalizedResponse {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        WorkflowDepositFinalizedResponse that = (WorkflowDepositFinalizedResponse) o;
+        WorkflowDepositFinalizedKafkaResponse that = (WorkflowDepositFinalizedKafkaResponse) o;
         return Objects.equals(orderId, that.orderId) &&
             depositOrderState == that.depositOrderState;
     }
@@ -70,7 +70,7 @@ public class WorkflowDepositFinalizedResponse {
 
     // TODO replaced by JsonSerializer??
 
-    public static class ResponseSerializer implements Serializer<WorkflowDepositFinalizedResponse> {
+    public static class ResponseSerializer implements Serializer<WorkflowDepositFinalizedKafkaResponse> {
 
         private Charset charset;
 
@@ -80,7 +80,7 @@ public class WorkflowDepositFinalizedResponse {
         }
 
         @Override
-        public byte[] serialize(String topic, WorkflowDepositFinalizedResponse data) {
+        public byte[] serialize(String topic, WorkflowDepositFinalizedKafkaResponse data) {
             String asString;
 
             try {

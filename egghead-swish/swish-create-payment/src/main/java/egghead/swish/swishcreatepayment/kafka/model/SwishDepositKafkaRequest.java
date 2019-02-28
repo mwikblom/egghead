@@ -14,7 +14,7 @@ import java.util.Objects;
  *
  * @author mikael
  */
-public class SwishDepositRequest {
+public class SwishDepositKafkaRequest {
 
     private String orderId;
 
@@ -34,7 +34,7 @@ public class SwishDepositRequest {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        SwishDepositRequest that = (SwishDepositRequest) o;
+        SwishDepositKafkaRequest that = (SwishDepositKafkaRequest) o;
         return Objects.equals(orderId, that.orderId);
     }
 
@@ -50,7 +50,7 @@ public class SwishDepositRequest {
             '}';
     }
 
-    public static class RequestDeserializer implements Deserializer<SwishDepositRequest> {
+    public static class RequestDeserializer implements Deserializer<SwishDepositKafkaRequest> {
 
         private Charset charset;
 
@@ -60,12 +60,12 @@ public class SwishDepositRequest {
         }
 
         @Override
-        public SwishDepositRequest deserialize(String topic, byte[] data) {
+        public SwishDepositKafkaRequest deserialize(String topic, byte[] data) {
             String asString = new String(data, charset);
 
             ObjectMapper objectMapper = new ObjectMapper();
             try {
-                return objectMapper.readValue(data, SwishDepositRequest.class);
+                return objectMapper.readValue(data, SwishDepositKafkaRequest.class);
             } catch (IOException e) {
                 throw new RuntimeException("Unable to deserialize " + asString, e);
             }

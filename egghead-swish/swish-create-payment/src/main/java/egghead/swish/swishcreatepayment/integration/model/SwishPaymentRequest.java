@@ -5,7 +5,7 @@ import java.util.Objects;
 /**
  * @author mikael
  */
-public class SwishPaymentRequestResponse {
+public class SwishPaymentRequest {
 
     private String autoStartToken;
     private String location;
@@ -34,7 +34,7 @@ public class SwishPaymentRequestResponse {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        SwishPaymentRequestResponse that = (SwishPaymentRequestResponse) o;
+        SwishPaymentRequest that = (SwishPaymentRequest) o;
         return Objects.equals(autoStartToken, that.autoStartToken) &&
             Objects.equals(location, that.location);
     }

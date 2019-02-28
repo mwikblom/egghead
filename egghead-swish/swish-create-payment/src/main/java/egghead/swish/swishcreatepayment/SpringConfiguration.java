@@ -1,9 +1,9 @@
 package egghead.swish.swishcreatepayment;
 
 import com.google.common.collect.ImmutableMap;
-import egghead.swish.swishcreatepayment.kafka.model.SwishDepositRequest;
-import egghead.swish.swishcreatepayment.kafka.model.UiCreatePaymentResponse;
-import egghead.swish.swishcreatepayment.kafka.model.WorkflowDepositFinalizedResponse;
+import egghead.swish.swishcreatepayment.kafka.model.SwishDepositKafkaRequest;
+import egghead.swish.swishcreatepayment.kafka.model.UiCreatePaymentKafkaResponse;
+import egghead.swish.swishcreatepayment.kafka.model.WorkflowDepositFinalizedKafkaResponse;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
@@ -52,27 +52,27 @@ public class SpringConfiguration {
     }
 
     @Bean
-    public KafkaSender<Integer, UiCreatePaymentResponse> kafkaSenderForUiCreayePaymentResponse() {
-        KafkaSender<Integer, UiCreatePaymentResponse> kafkaSender = KafkaSender.create(senderOptions(UiCreatePaymentResponse.ResponseSerializer.class));
+    public KafkaSender<Integer, UiCreatePaymentKafkaResponse> kafkaSenderForUiCreayePaymentResponse() {
+        KafkaSender<Integer, UiCreatePaymentKafkaResponse> kafkaSender = KafkaSender.create(senderOptions(UiCreatePaymentKafkaResponse.ResponseSerializer.class));
         kafkaSenders.add(kafkaSender);
         return kafkaSender;
     }
 
     @Bean
-    public KafkaSender<Integer, WorkflowDepositFinalizedResponse> kafkaSenderForWorkflowDepositFinalizedResponse() {
-        KafkaSender<Integer, WorkflowDepositFinalizedResponse> kafkaSender = KafkaSender.create(senderOptions(WorkflowDepositFinalizedResponse.ResponseSerializer.class));
+    public KafkaSender<Integer, WorkflowDepositFinalizedKafkaResponse> kafkaSenderForWorkflowDepositFinalizedResponse() {
+        KafkaSender<Integer, WorkflowDepositFinalizedKafkaResponse> kafkaSender = KafkaSender.create(senderOptions(WorkflowDepositFinalizedKafkaResponse.ResponseSerializer.class));
         kafkaSenders.add(kafkaSender);
         return kafkaSender;
     }
 
     @Bean
-    public ReceiverOptions<Integer, SwishDepositRequest> receiverOptionsForSwishDepositRequest() {
+    public ReceiverOptions<Integer, SwishDepositKafkaRequest> receiverOptionsForSwishDepositRequest() {
         Map<String, Object> props = new ImmutableMap.Builder<String, Object>()
             .put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers)
             .put(ConsumerConfig.CLIENT_ID_CONFIG, "sample-consumer")
             .put(ConsumerConfig.GROUP_ID_CONFIG, "sample-group")
             .put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class)
-            .put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, SwishDepositRequest.RequestDeserializer.class) // TODO maybe use JsonDeserializer
+            .put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, SwishDepositKafkaRequest.RequestDeserializer.class) // TODO maybe use JsonDeserializer
             .put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
             .build();
         return ReceiverOptions.create(props);
