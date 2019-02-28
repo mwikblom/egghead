@@ -1,5 +1,6 @@
 package egghead.swish.swishcreatepayment.integration;
 
+import egghead.swish.swishcreatepayment.integration.model.PaymentRequestObject;
 import egghead.swish.swishcreatepayment.integration.model.SwishPaymentRequest;
 import io.netty.handler.ssl.SslContext;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,8 +20,11 @@ import javax.annotation.PreDestroy;
 @Service
 public class SwishApi {
 
+    private static final String PAYMENT_REQUEST_PATH = "paymentrequests";
+
     private final WebClient webClient;
     private final String swishApiBaseUrl;
+
 
     public SwishApi(@Value("${swish.api.base.url}") String swishApiBaseUrl) {
         this.swishApiBaseUrl = swishApiBaseUrl;
@@ -39,27 +43,20 @@ public class SwishApi {
             .build();
     }
 
-    @PreDestroy
-    public void closeWebClient() {
-        webClient.
-    }
-
-    public Mono callCreatePaymentRequest(Scheduler scheduler) {
-
+    public Mono callCreatePaymentRequest(Scheduler scheduler, PaymentRequestObject paymentRequestObject) {
 
         Mono<String> req = webClient
             .post()
-            .uri(path)
-            .accept( MediaType.APPLICATION_JSON )
+            .uri(PAYMENT_REQUEST_PATH)
+            .accept(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-            .body(BodyInserters.fromObject(swishPaymentRequest))
+            .body(BodyInserters.fromObject(paymentRequestObject))
             .exchange()
             .subscribeOn(scheduler)
             .map(response -> {
                 HttpHeaders headers = response.headers().asHttpHeaders();
                 headers.get("Location");
                 LOGGER.info("Got respose {}", headers.get("Location"));
-
                 return headers.toString();
                 // TODO .. should be response Location.
             }).doOnError(err -> {
