@@ -1,5 +1,6 @@
 package egghead.swish.swishcreatepayment.kafka;
 
+import egghead.swish.swishcreatepayment.depositservice.DepositServiceApi;
 import egghead.swish.swishcreatepayment.depositservice.model.DepositOrderResponse;
 import egghead.swish.swishcreatepayment.swish.SwishApi;
 import egghead.swish.swishcreatepayment.swish.model.CreatePaymentRequestResponse;
@@ -48,6 +49,7 @@ public class PaymentRequestConsumerService {
     private final String workflowDepositFinalizedResponseTopic;
     private final ReceiverOptions<Integer, SwishDepositKafkaRequest> receiverOptionsForSwishDepositRequest;
     private final SwishApi swishApi;
+    private final DepositServiceApi depositServiceApi;
 
     private Disposable kafkaConsumerForSwishDepositRequest;
 
@@ -58,7 +60,8 @@ public class PaymentRequestConsumerService {
                                          @Value("${trustly.swish.UiCreatePaymentResponse.topic}") String uiCreatePaymentResponseTopic,
                                          @Value("${trustly.swish.WorkflowDepositFinalizedResponse.topic}") String workflowDepositFinalizedResponseTopic,
                                          ReceiverOptions<Integer, SwishDepositKafkaRequest> receiverOptionsForSwishDepositRequest,
-                                         SwishApi swishApi) {
+                                         SwishApi swishApi,
+                                         DepositServiceApi depositServiceApi) {
         this.kafkaSenderForUiCreatePaymentResponse = kafkaSenderForUiCreatePaymentResponse;
         this.kafkaSenderForWorkflowDepositFinalizedResponse = kafkaSenderForWorkflowDepositFinalizedResponse;
         this.swishDepositRequestTopic = swishDepositRequestTopic;
@@ -66,6 +69,7 @@ public class PaymentRequestConsumerService {
         this.workflowDepositFinalizedResponseTopic = workflowDepositFinalizedResponseTopic;
         this.receiverOptionsForSwishDepositRequest = receiverOptionsForSwishDepositRequest;
         this.swishApi = swishApi;
+        this.depositServiceApi = depositServiceApi;
     }
 
     @PostConstruct
@@ -75,56 +79,15 @@ public class PaymentRequestConsumerService {
         LOGGER.info("Created.");
     }
 
-    private Mono<DepositOrderResponse> callDepositService(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest) {
-        String path = "todos/1";
-        WebClient webClient = WebClient.builder()
-            .baseUrl("https://jsonplaceholder.typicode.com/")
-            .build();
-
-        return webClient.get()
-            .uri(path)
-            .retrieve()
-            .bodyToMono(DepositOrderResponse.class)
-            .subscribeOn(scheduler)
-            .map(depositOrder -> {
-
-                // fake some data here
-                depositOrder.setOrderId(swishDepositKafkaRequest.getOrderId());
-                depositOrder.setAmount(new BigDecimal(10));
-                depositOrder.setCurrency(Currency.getInstance("SEK"));
-                depositOrder.setMerchantSwishAlias("1231181189");
-                depositOrder.setPayerPhoneNumber("073454321");
-                depositOrder.setMobile(true);
-                depositOrder.setMessageOnStatement("aPayment");
-
-                LOGGER.info("callDepositService - THREAD-ID: {}: {}:", Thread.currentThread().getId(), depositOrder);
-
-                return depositOrder;
-            });
-    }
-
-    private Mono<CreatePaymentRequestResponse> callSwishPaymentRequest(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrderResponse depositOrder) {
-
-        PaymentRequestObject paymentRequestObject = new PaymentRequestObject();
-        paymentRequestObject.setAmount(depositOrder.getAmount().toString());
-        paymentRequestObject.setCallbackUrl("https://www.youtube.com");
-        paymentRequestObject.setMessage(depositOrder.getMessageOnStatement());
-        paymentRequestObject.setCurrency(depositOrder.getCurrency().getCurrencyCode());
-        paymentRequestObject.setPayeePaymentReference(depositOrder.getOrderId());
-        paymentRequestObject.setPayeeAlias(depositOrder.getMerchantSwishAlias());
-
-        return swishApi.callCreatePaymentRequest(scheduler, paymentRequestObject);
-    }
-
     private Mono<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> doSwishDepositChain(SwishDepositKafkaRequest swishDepositKafkaRequest, ReceiverOffset receiverOffset) {
 
         // TODO correct scheduler
         Scheduler scheduler = Schedulers.elastic();
 
-        Mono<DepositOrderResponse> callDepositService = callDepositService(scheduler, swishDepositKafkaRequest);
+        Mono<DepositOrderResponse> callDepositService = depositServiceApi.callDepositOrder(scheduler, swishDepositKafkaRequest);
         return callDepositService
-            .zipWhen(depositOrder -> callSwishPaymentRequest(scheduler, swishDepositKafkaRequest, depositOrder), (depositOrder, createPaymentRequestResponse)
-                -> Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, createPaymentRequestResponse));
+            .zipWhen(depositOrder -> swishApi.callCreatePaymentRequest(scheduler, depositOrder), (depositOrder, createPaymentRequestResponse) ->
+                Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, createPaymentRequestResponse));
     }
 
     private Flux<SwishPaymentStatus> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrderResponse depositOrder, CreatePaymentRequestResponse swishPaymentRequest) {

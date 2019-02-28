@@ -1,7 +1,10 @@
 package egghead.swish.swishcreatepayment.swish;
 
+import egghead.swish.swishcreatepayment.depositservice.model.DepositOrderResponse;
 import egghead.swish.swishcreatepayment.swish.model.CreatePaymentRequestResponse;
 import egghead.swish.swishcreatepayment.swish.model.PaymentRequestObject;
+import egghead.swish.swishcreatepayment.swish.model.RetrievePaymentResponse;
+import egghead.swish.swishcreatepayment.swish.model.SwishPaymentStatus;
 import io.netty.handler.ssl.SslContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +46,30 @@ public class SwishApi {
             .build();
     }
 
-    public Mono<CreatePaymentRequestResponse> callCreatePaymentRequest(Scheduler scheduler, PaymentRequestObject paymentRequestObject) {
+    public Mono<RetrievePaymentResponse> callRetrievePayment(Scheduler scheduler, String location) {
+        return webClient
+            .get()
+            .uri(location)
+            .accept(MediaType.APPLICATION_JSON)
+            .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+            .retrieve()
+            .bodyToMono(RetrievePaymentResponse.class)
+            .subscribeOn(scheduler)
+            .doOnError(err -> {
+                LOGGER.warn("Got error {}", err);
+            });
+
+    }
+
+    public Mono<CreatePaymentRequestResponse> callCreatePaymentRequest(Scheduler scheduler, DepositOrderResponse depositOrder) {
+        PaymentRequestObject paymentRequestObject = new PaymentRequestObject();
+        paymentRequestObject.setAmount(depositOrder.getAmount().toString());
+        paymentRequestObject.setCallbackUrl("https://www.youtube.com");
+        paymentRequestObject.setMessage(depositOrder.getMessageOnStatement());
+        paymentRequestObject.setCurrency(depositOrder.getCurrency().getCurrencyCode());
+        paymentRequestObject.setPayeePaymentReference(depositOrder.getOrderId());
+        paymentRequestObject.setPayeeAlias(depositOrder.getMerchantSwishAlias());
+
         return webClient
             .post()
             .uri(PAYMENT_REQUEST_PATH)
