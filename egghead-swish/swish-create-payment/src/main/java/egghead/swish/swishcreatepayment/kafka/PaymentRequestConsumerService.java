@@ -2,20 +2,18 @@ package egghead.swish.swishcreatepayment.kafka;
 
 import egghead.swish.swishcreatepayment.depositservice.DepositServiceApi;
 import egghead.swish.swishcreatepayment.depositservice.model.DepositOrderResponse;
-import egghead.swish.swishcreatepayment.swish.SwishApi;
-import egghead.swish.swishcreatepayment.swish.model.CreatePaymentRequestResponse;
-import egghead.swish.swishcreatepayment.swish.model.PaymentRequestObject;
-import egghead.swish.swishcreatepayment.swish.model.SwishPaymentStatus;
 import egghead.swish.swishcreatepayment.kafka.model.SwishDepositKafkaRequest;
 import egghead.swish.swishcreatepayment.kafka.model.UiCreatePaymentKafkaResponse;
 import egghead.swish.swishcreatepayment.kafka.model.WorkflowDepositFinalizedKafkaResponse;
+import egghead.swish.swishcreatepayment.swish.SwishApi;
+import egghead.swish.swishcreatepayment.swish.model.CreatePaymentRequestResponse;
+import egghead.swish.swishcreatepayment.swish.model.RetrievePaymentResponse;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.Disposable;
 import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
@@ -32,11 +30,8 @@ import reactor.util.function.Tuples;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import javax.xml.ws.Response;
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Collections;
-import java.util.Currency;
 
 @Service
 public class PaymentRequestConsumerService {
@@ -90,39 +85,19 @@ public class PaymentRequestConsumerService {
                 Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, createPaymentRequestResponse));
     }
 
-    private Flux<SwishPaymentStatus> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrderResponse depositOrder, CreatePaymentRequestResponse swishPaymentRequest) {
-        String path = "todos/1";
-        WebClient webClient = WebClient.builder()
-            .baseUrl("https://jsonplaceholder.typicode.com/")
-            .build();
-
-        // TODO use swishPaymentRequestResponse.location to poll status
+    private Flux<RetrievePaymentResponse> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrderResponse depositOrder, CreatePaymentRequestResponse swishPaymentRequest) {
 
         // Wait 5 seconds before starting. Then we poll every 2 seconds
         Flux<Long> interval = Flux.interval(Duration.ofSeconds(5), Duration.ofSeconds(2));
 
-        Mono<SwishPaymentStatus> pollReq =
-            webClient.get()
-                .uri(path)
-                .retrieve()
-                .bodyToMono(Response.class)
-                .subscribeOn(scheduler)
-                .map(response -> {
-                    // fake som data here
-                    SwishPaymentStatus swishPaymentStatus = new SwishPaymentStatus();
-                    swishPaymentStatus.setStatus(SwishPaymentStatus.Status.PENDING);
-
-                    LOGGER.info("pollSwishPaymentStatus - THREAD-ID {}: {}", Thread.currentThread().getId(), swishPaymentStatus);
-                    return swishPaymentStatus;
-                });
-
         return Flux.from(interval)
-            .flatMap(count -> pollReq)
+            .flatMap(count -> swishApi.callRetrievePayment(scheduler, swishPaymentRequest.getLocation()))
             // Here we should check polling-status. Now we just say if Response == stop, then we stop.
-            .takeWhile(swishPaymentStatus -> swishPaymentStatus.getStatus() == SwishPaymentStatus.Status.PENDING)
+            .takeWhile(swishPaymentStatus -> swishPaymentStatus.getStatus().equals("PENDING"))
             // Poll for 15 seconds.
             .take(Duration.ofSeconds(15))
-            .doFinally(signalType -> LOGGER.info("Done polling order: {}", depositOrder.getOrderId()));
+            .doFinally(signalType -> LOGGER.info("Done polling order: {}", depositOrder.getOrderId()))
+            .doOnSubscribe(subscription -> LOGGER.info("Subscribing"));
     }
 
     private Disposable createKafkaConsumer() {

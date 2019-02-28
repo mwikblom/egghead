@@ -4,7 +4,6 @@ import egghead.swish.swishcreatepayment.depositservice.model.DepositOrderRespons
 import egghead.swish.swishcreatepayment.swish.model.CreatePaymentRequestResponse;
 import egghead.swish.swishcreatepayment.swish.model.PaymentRequestObject;
 import egghead.swish.swishcreatepayment.swish.model.RetrievePaymentResponse;
-import egghead.swish.swishcreatepayment.swish.model.SwishPaymentStatus;
 import io.netty.handler.ssl.SslContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,8 +56,8 @@ public class SwishApi {
             .subscribeOn(scheduler)
             .doOnError(err -> {
                 LOGGER.warn("Got error {}", err);
-            });
-
+            })
+            .doOnSuccess(retrievePaymentResponse -> LOGGER.info("Received {} from swish", retrievePaymentResponse));
     }
 
     public Mono<CreatePaymentRequestResponse> callCreatePaymentRequest(Scheduler scheduler, DepositOrderResponse depositOrder) {
