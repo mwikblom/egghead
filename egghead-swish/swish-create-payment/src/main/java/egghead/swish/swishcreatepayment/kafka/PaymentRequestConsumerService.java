@@ -23,6 +23,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
+import reactor.kafka.receiver.ReceiverRecord;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderRecord;
 import reactor.util.function.Tuple4;
@@ -85,20 +86,26 @@ public class PaymentRequestConsumerService {
                 Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, createPaymentRequestResponse));
     }
 
-    private Flux<RetrievePaymentResponse> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrderResponse depositOrder, CreatePaymentRequestResponse swishPaymentRequest) {
+    private Flux<RetrievePaymentResponse> pollSwishPaymentStatus(Scheduler scheduler,
+                                                                 String location) {
 
         // Wait 5 seconds before starting. Then we poll every 2 seconds
         Flux<Long> interval = Flux.interval(Duration.ofSeconds(5), Duration.ofSeconds(2));
 
         return Flux.from(interval)
-            .flatMap(count -> swishApi.callRetrievePayment(scheduler, swishPaymentRequest.getLocation()))
+            .flatMap(count -> swishApi.callRetrievePayment(scheduler, location))
             // Here we should check polling-status. Now we just say if Response == stop, then we stop.
             .takeWhile(swishPaymentStatus -> swishPaymentStatus.getStatus().equals("PENDING"))
             // Poll for 15 seconds.
             .take(Duration.ofSeconds(15))
-            .doFinally(signalType -> LOGGER.info("Done polling order: {}", depositOrder.getOrderId()))
             .doOnSubscribe(subscription -> LOGGER.info("Subscribing"));
     }
+
+    private <K, V> Flux<ReceiverRecord<K, V>> initRecieverListener(ReceiverOptions<K, V> receiverOptions) {
+        return KafkaReceiver.create(receiverOptions)
+            .receive();
+    }
+
 
     private Disposable createKafkaConsumer() {
         ReceiverOptions<Integer, SwishDepositKafkaRequest> options = receiverOptionsForSwishDepositRequest
@@ -106,6 +113,9 @@ public class PaymentRequestConsumerService {
 
         // TODO correct scheduler
         Scheduler scheduler = Schedulers.elastic();
+
+        Flux<?> receive = KafkaReceiver.create(options)
+            .receive();
 
         ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> flux = KafkaReceiver.create(options)
             .receive()
@@ -117,7 +127,8 @@ public class PaymentRequestConsumerService {
 
                 // HTTP-blocking callCreateDeposit-ish.
                 return doSwishDepositChain(swishDepositKafkaRequest, receiverOffset);
-            }).publish();
+            })
+            .publish();
 
         // Starts poller
         Flux.from(flux)
@@ -126,7 +137,7 @@ public class PaymentRequestConsumerService {
                 DepositOrderResponse depositOrder = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
                 CreatePaymentRequestResponse swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
 
-                return pollSwishPaymentStatus(scheduler, swishDepositKafkaRequest, depositOrder, swishPaymentRequest);
+                return pollSwishPaymentStatus(scheduler, swishPaymentRequest.getLocation());
             })
             .subscribe();
 
