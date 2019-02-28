@@ -4,108 +4,114 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.netty.http.client.HttpClient;
-import reactor.tuple.Tuple2;
 
 import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.TrustManagerFactory;
 import java.io.FileInputStream;
 import java.security.KeyStore;
-import java.util.concurrent.Future;
 
+@Service
 public class Certificate {
+    private final WebClient webClient;
+
+    @Autowired
+    public Certificate() {
+        this.webClient = createWebClient();
+
+    }
     private final static Logger LOGGER = LoggerFactory.getLogger(Certificate.class);
 
-    private static Tuple2<KeyManagerFactory, TrustManagerFactory> getSSLContextPKCS12(String file, String password) {
+    private static KeyManagerFactory getKeyManagerFactory(String file, String password) {
         try (FileInputStream fileInputStream = new FileInputStream(file)) {
             KeyStore keyStore = KeyStore.getInstance("PKCS12");
-
             keyStore.load(fileInputStream, password.toCharArray());
-
             KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("SunX509");
             keyManagerFactory.init(keyStore, password.toCharArray());
-
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
-            tmf.init(keyStore);
-
-            return Tuple2.of(keyManagerFactory, tmf);
+            return keyManagerFactory;
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static SslContext createSslContext(String filePath) {
+    private static SslContext createSslContext() {
         try {
-
-            Tuple2<KeyManagerFactory, TrustManagerFactory> certs = getSSLContextPKCS12(filePath, "swish");
-            return SslContextBuilder.forServer(certs.getT1())
+            String pkcs12FilePath = Certificate.class.getClassLoader().getResource("swish.p12").getPath();
+            KeyManagerFactory keyManagerFactory = getKeyManagerFactory(pkcs12FilePath, "swish");
+            return SslContextBuilder
+                .forClient()
                 .startTls(true)
-                .trustManager(certs.getT2())
+                .keyManager(keyManagerFactory)
                 .build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to create SSlContext.", e);
         }
     }
-    public static void doSwishCall() {
-        new Thread() {
-            public void run() {
-                SwishPaymentRequest swishPaymentRequest = new SwishPaymentRequest();
-                swishPaymentRequest.setAmount("100");
-                swishPaymentRequest.setCallbackUrl("www.youtube.com");
-                swishPaymentRequest.setMessage("Britta");
-                swishPaymentRequest.setCurrency("SEK");
-                swishPaymentRequest.setPayeePaymentReference("ONETWOTHREE");
-                swishPaymentRequest.setPayeeAlias("1231181189");
 
-                String baseUrl = "HTTPS://mss.cpc.getswish.net/swish-cpcapi/api/v1/";
-                String path = "paymentrequests";
-                String certificateFilePath = Certificate.class.getClassLoader().getResource("swish.p12").getPath();
-                SslContext sslContext = createSslContext(certificateFilePath);
-                HttpClient httpClient = HttpClient.create()
-                    .secure(sslContextSpec -> sslContextSpec.sslContext(sslContext));
+    private static WebClient createWebClient() {
+        String baseUrl = "HTTPS://mss.cpc.getswish.net/swish-cpcapi/api/v1/";
+        SslContext sslContext = createSslContext();
+        HttpClient httpClient = HttpClient.create()
+            .secure(sslContextSpec -> sslContextSpec.sslContext(sslContext));
 
-                WebClient webClient = WebClient.builder()
-                    .clientConnector(new ReactorClientHttpConnector(httpClient))
-                    .baseUrl(baseUrl)
-                    .build();
+        WebClient webClient = WebClient.builder()
+            .clientConnector(new ReactorClientHttpConnector(httpClient))
+            .baseUrl(baseUrl)
+            .build();
 
-                Scheduler scheduler = Schedulers.elastic();
-
-                webClient
-                    .post()
-                    .uri(path)
-                    .accept( MediaType.APPLICATION_JSON )
-                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                    .body(BodyInserters.fromObject(swishPaymentRequest))
-                    .exchange()
-                    .subscribeOn(scheduler)
-                    .map(response -> {
-                        HttpHeaders headers = response.headers().asHttpHeaders();
-                        headers.get("Location");
-                        LOGGER.info("Got respose {}", headers.get("Location"));
-
-                        return headers.get("Location");
-                        // TODO .. should be response Location.
-                    }).doOnError(err -> {
-                    LOGGER.warn("Got error {}", err.toString());
-                }).subscribe();
-
-            }
-        }.start();
+        return webClient;
     }
 
-    public static void main(String[] args) throws InterruptedException {
-        doSwishCall();
-        Thread.sleep(5000);
-    }
+    public void doSwishCall() {
+        SwishPaymentRequest swishPaymentRequest = new SwishPaymentRequest();
+        swishPaymentRequest.setAmount("100");
+        swishPaymentRequest.setCallbackUrl("https://www.youtube.com");
+        swishPaymentRequest.setMessage("Britta");
+        swishPaymentRequest.setCurrency("SEK");
+        swishPaymentRequest.setPayeePaymentReference("ONETWOTHREE");
+        swishPaymentRequest.setPayeeAlias("1231181189");
+        String path = "paymentrequests";
 
+        Scheduler scheduler = Schedulers.elastic();
+
+        LOGGER.info("Creating Request.");
+
+        Mono<String> req = webClient
+            .post()
+            .uri(path)
+            .accept( MediaType.APPLICATION_JSON )
+            .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+            .body(BodyInserters.fromObject(swishPaymentRequest))
+            .exchange()
+            .subscribeOn(scheduler)
+            .map(response -> {
+                HttpHeaders headers = response.headers().asHttpHeaders();
+                headers.get("Location");
+                LOGGER.info("Got respose {}", headers.get("Location"));
+
+                return headers.toString();
+                // TODO .. should be response Location.
+            }).doOnError(err -> {
+                LOGGER.warn("Got error {}", err);
+            })
+            .flatMap(y -> {
+                LOGGER.info("Got response {}", y);
+                return Mono.just(y);
+            });
+
+        String res = req.block();
+
+        String foo = "";
+    }
 
     public static class SwishPaymentRequest {
         private String payeePaymentReference;
