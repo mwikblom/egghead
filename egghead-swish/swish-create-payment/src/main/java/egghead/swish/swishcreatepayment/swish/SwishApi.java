@@ -1,7 +1,7 @@
-package egghead.swish.swishcreatepayment.integration;
+package egghead.swish.swishcreatepayment.swish;
 
-import egghead.swish.swishcreatepayment.integration.model.CreatePaymentRequestResponse;
-import egghead.swish.swishcreatepayment.integration.model.PaymentRequestObject;
+import egghead.swish.swishcreatepayment.swish.model.CreatePaymentRequestResponse;
+import egghead.swish.swishcreatepayment.swish.model.PaymentRequestObject;
 import io.netty.handler.ssl.SslContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,16 +23,17 @@ public class SwishApi {
 
     private final WebClient webClient;
     private final String swishApiBaseUrl;
+    private final SslContextFactory sslContextFactory;
 
-
-    public SwishApi(@Value("${swish.api.base.url}") String swishApiBaseUrl) {
+    public SwishApi(@Value("${swish.api.base.url}") String swishApiBaseUrl, SslContextFactory sslContextFactory) {
         this.swishApiBaseUrl = swishApiBaseUrl;
+        this.sslContextFactory = sslContextFactory;
         this.webClient = createWebClient();
     }
 
     private WebClient createWebClient() {
 
-        SslContext sslContext = Certificate.createSslContext();
+        SslContext sslContext = sslContextFactory.createSslContext();
         HttpClient httpClient = HttpClient.create()
             .secure(sslContextSpec -> sslContextSpec.sslContext(sslContext));
 

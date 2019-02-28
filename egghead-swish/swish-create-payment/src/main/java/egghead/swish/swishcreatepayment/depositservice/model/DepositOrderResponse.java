@@ -1,4 +1,4 @@
-package egghead.swish.swishcreatepayment.deposit.model;
+package egghead.swish.swishcreatepayment.depositservice.model;
 
 import java.math.BigDecimal;
 import java.util.Currency;
@@ -9,7 +9,7 @@ import java.util.Objects;
  *
  * @author mikael
  */
-public class DepositOrder {
+public class DepositOrderResponse {
 
     private String id;
     private String orderId;
@@ -92,7 +92,7 @@ public class DepositOrder {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        DepositOrder that = (DepositOrder) o;
+        DepositOrderResponse that = (DepositOrderResponse) o;
         return isMobile == that.isMobile &&
             Objects.equals(orderId, that.orderId) &&
             Objects.equals(amount, that.amount) &&

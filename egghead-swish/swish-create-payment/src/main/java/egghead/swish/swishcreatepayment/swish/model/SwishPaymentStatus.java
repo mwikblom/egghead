@@ -1,4 +1,4 @@
-package egghead.swish.swishcreatepayment.integration.model;
+package egghead.swish.swishcreatepayment.swish.model;
 
 import java.util.Objects;
 
