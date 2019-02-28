@@ -86,8 +86,10 @@ public class PaymentRequestConsumerService {
                 Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, createPaymentRequestResponse));
     }
 
-    private Flux<RetrievePaymentResponse> pollSwishPaymentStatus(Scheduler scheduler,
-                                                                 String location) {
+    private Flux<RetrievePaymentResponse> pollSwishPaymentStatus(String location) {
+
+        // TODO correct scheduler
+        Scheduler scheduler = Schedulers.elastic();
 
         // Wait 5 seconds before starting. Then we poll every 2 seconds
         Flux<Long> interval = Flux.interval(Duration.ofSeconds(5), Duration.ofSeconds(2));
@@ -101,24 +103,17 @@ public class PaymentRequestConsumerService {
             .doOnSubscribe(subscription -> LOGGER.info("Subscribing"));
     }
 
-    private <K, V> Flux<ReceiverRecord<K, V>> initRecieverListener(ReceiverOptions<K, V> receiverOptions) {
+    private <K, V> Flux<ReceiverRecord<K, V>> setupRecieverListener(ReceiverOptions<K, V> receiverOptions) {
         return KafkaReceiver.create(receiverOptions)
             .receive();
     }
 
+    private Flux<ReceiverRecord<Integer, SwishDepositKafkaRequest>> setupSwishDepositKafkaRequest() {
+        return setupRecieverListener(receiverOptionsForSwishDepositRequest.subscription(Collections.singleton(swishDepositRequestTopic)));
+    }
 
-    private Disposable createKafkaConsumer() {
-        ReceiverOptions<Integer, SwishDepositKafkaRequest> options = receiverOptionsForSwishDepositRequest
-            .subscription(Collections.singleton(swishDepositRequestTopic));
-
-        // TODO correct scheduler
-        Scheduler scheduler = Schedulers.elastic();
-
-        Flux<?> receive = KafkaReceiver.create(options)
-            .receive();
-
-        ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> flux = KafkaReceiver.create(options)
-            .receive()
+    private ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> createSwishDepositFlux() {
+        return setupSwishDepositKafkaRequest()
             .flatMap(record -> {
                 ReceiverOffset receiverOffset = record.receiverOffset();
                 SwishDepositKafkaRequest swishDepositKafkaRequest = record.value();
@@ -129,20 +124,22 @@ public class PaymentRequestConsumerService {
                 return doSwishDepositChain(swishDepositKafkaRequest, receiverOffset);
             })
             .publish();
+    }
 
-        // Starts poller
-        Flux.from(flux)
+    private void pollerFlux(ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> createSwishDepositFlux) {
+        Flux.from(createSwishDepositFlux)
             .flatMap(swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest -> {
                 SwishDepositKafkaRequest swishDepositKafkaRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT1();
                 DepositOrderResponse depositOrder = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
                 CreatePaymentRequestResponse swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
 
-                return pollSwishPaymentStatus(scheduler, swishPaymentRequest.getLocation());
+                return pollSwishPaymentStatus(swishPaymentRequest.getLocation());
             })
             .subscribe();
+    }
 
-        // Produces record to producer topic..
-        flux
+    private void kafkaSenderFlux(ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> createSwishDepositFlux) {
+        createSwishDepositFlux
             .map(swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest -> {
                 CreatePaymentRequestResponse swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
                 DepositOrderResponse depositOrder = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
@@ -159,8 +156,16 @@ public class PaymentRequestConsumerService {
             })
             .as(kafkaSenderForUiCreatePaymentResponse::send)
             .subscribe();
+    }
 
-        return flux.connect();
+    private Disposable createKafkaConsumer() {
+
+        ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> createSwishDepositFlux = createSwishDepositFlux();
+
+        pollerFlux(createSwishDepositFlux);
+        kafkaSenderFlux(createSwishDepositFlux);
+
+        return createSwishDepositFlux.connect();
     }
 
     @PreDestroy
