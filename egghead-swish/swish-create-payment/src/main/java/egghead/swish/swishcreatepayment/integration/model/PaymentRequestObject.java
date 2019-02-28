@@ -5,7 +5,6 @@ public class PaymentRequestObject {
     private String payeePaymentReference;
     private String callbackUrl;
     private String payeeAlias;
-    private String payerAlias;
     private String amount;
     private String message;
     private String currency;
@@ -56,13 +55,5 @@ public class PaymentRequestObject {
 
     public void setCurrency(String currency) {
         this.currency = currency;
-    }
-
-    public String getPayerAlias() {
-        return payerAlias;
-    }
-
-    public void setPayerAlias(String payerAlias) {
-        this.payerAlias = payerAlias;
     }
 }

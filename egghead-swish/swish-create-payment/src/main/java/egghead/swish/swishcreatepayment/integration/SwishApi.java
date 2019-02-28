@@ -19,7 +19,7 @@ import reactor.netty.http.client.HttpClient;
 @Service
 public class SwishApi {
     private static final Logger LOGGER = LoggerFactory.getLogger(SwishApi.class);
-    private static final String PAYMENT_REQUEST_PATH = "paymentrequests";
+    private static final String PAYMENT_REQUEST_PATH = "/paymentrequests";
 
     private final WebClient webClient;
     private final String swishApiBaseUrl;
@@ -55,9 +55,9 @@ public class SwishApi {
                 HttpHeaders headers = response.headers().asHttpHeaders();
                 String location = headers.getFirst("Location");
                 String paymentRequestToken = headers.getFirst("PaymentRequestToken");
-                LOGGER.info("Got respose {}", headers.get("Location"));
-
+                LOGGER.info("Returning {} and {}", location, paymentRequestToken);
                 return new CreatePaymentRequestResponse(location, paymentRequestToken);
+
             }).doOnError(err -> {
                 LOGGER.warn("Got error {}", err);
             });

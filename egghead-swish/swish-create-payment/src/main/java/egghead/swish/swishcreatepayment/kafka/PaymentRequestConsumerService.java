@@ -26,6 +26,7 @@ import reactor.kafka.receiver.ReceiverOffset;
 import reactor.kafka.receiver.ReceiverOptions;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderRecord;
+import reactor.tuple.Tuple;
 import reactor.tuple.Tuple2;
 import reactor.util.function.Tuple4;
 import reactor.util.function.Tuples;
@@ -93,7 +94,7 @@ public class PaymentRequestConsumerService {
                 depositOrder.setOrderId(swishDepositKafkaRequest.getOrderId());
                 depositOrder.setAmount(new BigDecimal(10));
                 depositOrder.setCurrency(Currency.getInstance("SEK"));
-                depositOrder.setMerchantSwishAlias("0123456789");
+                depositOrder.setMerchantSwishAlias("1231181189");
                 depositOrder.setPayerPhoneNumber("073454321");
                 depositOrder.setMobile(true);
                 depositOrder.setMessageOnStatement("aPayment");
@@ -113,7 +114,6 @@ public class PaymentRequestConsumerService {
         paymentRequestObject.setCurrency(depositOrder.getCurrency().getCurrencyCode());
         paymentRequestObject.setPayeePaymentReference(depositOrder.getOrderId());
         paymentRequestObject.setPayeeAlias(depositOrder.getMerchantSwishAlias());
-        paymentRequestObject.setPayerAlias(depositOrder.getPayerPhoneNumber());
 
         return swishApi.callCreatePaymentRequest(scheduler, paymentRequestObject);
     }
@@ -125,8 +125,8 @@ public class PaymentRequestConsumerService {
 
         Mono<DepositOrder> callDepositService = callDepositService(scheduler, swishDepositKafkaRequest);
         return callDepositService
-            .zipWhen(depositOrder -> callSwishPaymentRequest(scheduler, swishDepositKafkaRequest, depositOrder), (grej1, grej2) -> )
-            .flatMap(depositOrderAndCreatePaymentRequestResponse -> Mono.just(Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrderAndCreatePaymentRequestResponse.getT1(), depositOrderAndCreatePaymentRequestResponse.getT2())));
+            .zipWhen(depositOrder -> callSwishPaymentRequest(scheduler, swishDepositKafkaRequest, depositOrder), (depositOrder, createPaymentRequestResponse)
+                -> Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, createPaymentRequestResponse));
     }
 
     private Flux<SwishPaymentStatus> pollSwishPaymentStatus(Scheduler scheduler, SwishDepositKafkaRequest swishDepositKafkaRequest, DepositOrder depositOrder, CreatePaymentRequestResponse swishPaymentRequest) {
@@ -147,7 +147,6 @@ public class PaymentRequestConsumerService {
                 .bodyToMono(Response.class)
                 .subscribeOn(scheduler)
                 .map(response -> {
-
                     // fake som data here
                     SwishPaymentStatus swishPaymentStatus = new SwishPaymentStatus();
                     swishPaymentStatus.setStatus(SwishPaymentStatus.Status.PENDING);
