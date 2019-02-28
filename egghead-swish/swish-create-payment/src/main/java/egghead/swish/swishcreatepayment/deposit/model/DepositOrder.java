@@ -11,6 +11,7 @@ import java.util.Objects;
  */
 public class DepositOrder {
 
+    private String id;
     private String orderId;
     private BigDecimal amount;
     private Currency currency;
@@ -18,6 +19,14 @@ public class DepositOrder {
     private boolean isMobile;
     private String payerPhoneNumber;
     private String merchantSwishAlias;
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
 
     public String getOrderId() {
         return orderId;

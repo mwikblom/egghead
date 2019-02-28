@@ -47,46 +47,6 @@ public class PaymentRequestConsumerService {
     private final ReceiverOptions<Integer, SwishDepositKafkaRequest> receiverOptionsForSwishDepositRequest;
 
     private Disposable kafkaConsumerForSwishDepositRequest;
-    private AtomicInteger counter = new AtomicInteger();
-
-    public static class Response {
-        private long userId;
-        private long id;
-        private String title;
-        private boolean completed;
-
-        public long getUserId() {
-            return userId;
-        }
-
-        public void setUserId(long userId) {
-            this.userId = userId;
-        }
-
-        public long getId() {
-            return id;
-        }
-
-        public void setId(long id) {
-            this.id = id;
-        }
-
-        public String getTitle() {
-            return title;
-        }
-
-        public void setTitle(String title) {
-            this.title = title;
-        }
-
-        public boolean isCompleted() {
-            return completed;
-        }
-
-        public void setCompleted(boolean completed) {
-            this.completed = completed;
-        }
-    }
 
     @Autowired
     public PaymentRequestConsumerService(KafkaSender<Integer, UiCreatePaymentKafkaResponse> kafkaSenderForUiCreatePaymentResponse,
@@ -119,15 +79,13 @@ public class PaymentRequestConsumerService {
         return webClient.get()
             .uri(path)
             .retrieve()
-            .bodyToMono(Response.class)// TODO DepositServiceResponse.class
+            .bodyToMono(DepositOrder.class)
             .subscribeOn(scheduler)
-            .map(response -> {
-                int currentCount = counter.getAndIncrement();
+            .map(depositOrder -> {
 
                 // fake some data here
-                DepositOrder depositOrder = new DepositOrder();
                 depositOrder.setOrderId(swishDepositKafkaRequest.getOrderId());
-                depositOrder.setAmount(new BigDecimal(currentCount));
+                depositOrder.setAmount(new BigDecimal(10));
                 depositOrder.setCurrency(Currency.getInstance("SEK"));
                 depositOrder.setMerchantSwishAlias("0123456789");
                 depositOrder.setPayerPhoneNumber("073454321");

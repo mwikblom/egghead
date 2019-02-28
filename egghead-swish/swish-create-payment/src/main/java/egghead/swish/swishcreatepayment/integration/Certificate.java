@@ -4,11 +4,9 @@ import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslContextBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -20,11 +18,10 @@ import javax.net.ssl.KeyManagerFactory;
 import java.io.FileInputStream;
 import java.security.KeyStore;
 
-@Service
+
 public class Certificate {
     private final WebClient webClient;
 
-    @Autowired
     public Certificate() {
         this.webClient = createWebClient();
 
@@ -43,7 +40,7 @@ public class Certificate {
         }
     }
 
-    private static SslContext createSslContext() {
+    public static SslContext createSslContext() {
         try {
             String pkcs12FilePath = Certificate.class.getClassLoader().getResource("swish.p12").getPath();
             KeyManagerFactory keyManagerFactory = getKeyManagerFactory(pkcs12FilePath, "swish");
