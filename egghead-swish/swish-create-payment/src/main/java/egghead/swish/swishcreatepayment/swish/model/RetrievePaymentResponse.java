@@ -12,7 +12,7 @@ public class RetrievePaymentResponse {
     private String amount;
     private String currency;
     private String message;
-    private String status;
+    private SwishStatusCode status;
     private String dateCreated; // 2015-02-19T22:01:53+01:00",
     private String datePaid; //: "2015-02-19T22:03:53+01:00"
 
@@ -88,11 +88,11 @@ public class RetrievePaymentResponse {
         this.message = message;
     }
 
-    public String getStatus() {
+    public SwishStatusCode getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(SwishStatusCode status) {
         this.status = status;
     }
 

@@ -8,6 +8,7 @@ import egghead.swish.swishcreatepayment.kafka.model.WorkflowDepositFinalizedKafk
 import egghead.swish.swishcreatepayment.swish.SwishApi;
 import egghead.swish.swishcreatepayment.swish.model.CreatePaymentRequestResponse;
 import egghead.swish.swishcreatepayment.swish.model.RetrievePaymentResponse;
+import egghead.swish.swishcreatepayment.swish.model.SwishStatusCode;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -96,20 +97,23 @@ public class PaymentRequestConsumerService {
 
         return Flux.from(interval)
             .flatMap(count -> swishApi.callRetrievePayment(scheduler, location))
-            // Here we should check polling-status. Now we just say if Response == stop, then we stop.
-            .takeWhile(swishPaymentStatus -> swishPaymentStatus.getStatus().equals("PENDING"))
+            .filter(retrievePaymentResponse -> {
+                return retrievePaymentResponse.getStatus() != SwishStatusCode.CREATED;
+            })
             // Poll for 15 seconds.
             .take(Duration.ofSeconds(15))
-            .doOnSubscribe(subscription -> LOGGER.info("Subscribing"));
+            .take(1)
+            .doOnSubscribe(subscription -> LOGGER.info("Subscribing"))
+            .doOnComplete(() -> LOGGER.info("Done with poll"));
     }
 
-    private <K, V> Flux<ReceiverRecord<K, V>> setupRecieverListener(ReceiverOptions<K, V> receiverOptions) {
+    private <K, V> Flux<ReceiverRecord<K, V>> setupReceiverListener(ReceiverOptions<K, V> receiverOptions) {
         return KafkaReceiver.create(receiverOptions)
             .receive();
     }
 
     private Flux<ReceiverRecord<Integer, SwishDepositKafkaRequest>> setupSwishDepositKafkaRequest() {
-        return setupRecieverListener(receiverOptionsForSwishDepositRequest.subscription(Collections.singleton(swishDepositRequestTopic)));
+        return setupReceiverListener(receiverOptionsForSwishDepositRequest.subscription(Collections.singleton(swishDepositRequestTopic)));
     }
 
     private ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> createSwishDepositFlux() {
@@ -127,14 +131,47 @@ public class PaymentRequestConsumerService {
     }
 
     private void pollerFlux(ConnectableFlux<Tuple4<SwishDepositKafkaRequest, ReceiverOffset, DepositOrderResponse, CreatePaymentRequestResponse>> createSwishDepositFlux) {
-        Flux.from(createSwishDepositFlux)
+        createSwishDepositFlux
             .flatMap(swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest -> {
-                SwishDepositKafkaRequest swishDepositKafkaRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT1();
-                DepositOrderResponse depositOrder = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
-                CreatePaymentRequestResponse swishPaymentRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
 
-                return pollSwishPaymentStatus(swishPaymentRequest.getLocation());
+                SwishDepositKafkaRequest swishDepositKafkaRequest = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT1();
+                DepositOrderResponse depositOrderResponse = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
+                CreatePaymentRequestResponse createPaymentRequestResponse = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
+
+
+                Flux<RetrievePaymentResponse> retrievePaymentResponseFlux = pollSwishPaymentStatus(createPaymentRequestResponse.getLocation());
+                retrievePaymentResponseFlux.subscribe();
+                return retrievePaymentResponseFlux
+                    .map(retrievePaymentResponse -> Tuples.of(swishDepositKafkaRequest, retrievePaymentResponse));
             })
+            .map(swishDepositKafkaRequestAndRetrievePaymentResponse -> {
+
+                SwishDepositKafkaRequest swishDepositKafkaRequest = swishDepositKafkaRequestAndRetrievePaymentResponse.getT1();
+                RetrievePaymentResponse retrievePaymentResponse = swishDepositKafkaRequestAndRetrievePaymentResponse.getT2();
+
+                WorkflowDepositFinalizedKafkaResponse workflowDepositFinalizedKafkaResponse = new WorkflowDepositFinalizedKafkaResponse();
+                workflowDepositFinalizedKafkaResponse.setOrderId(swishDepositKafkaRequest.getOrderId());
+
+                WorkflowDepositFinalizedKafkaResponse.DepositOrderState depositOrderState;
+                switch (retrievePaymentResponse.getStatus()) {
+                    case DECLINED:
+                        depositOrderState = WorkflowDepositFinalizedKafkaResponse.DepositOrderState.CANCELED;
+                        break;
+                    case ERROR:
+                        depositOrderState = WorkflowDepositFinalizedKafkaResponse.DepositOrderState.FAILED;
+                        break;
+                    case PAID:
+                        depositOrderState = WorkflowDepositFinalizedKafkaResponse.DepositOrderState.SUCCESSFUL;
+                        break;
+                    default:
+                        throw new RuntimeException("Unexpected status from Swish " + retrievePaymentResponse.getStatus());
+                }
+
+                workflowDepositFinalizedKafkaResponse.setDepositOrderState(depositOrderState);
+
+                return SenderRecord.create(new ProducerRecord<Integer, WorkflowDepositFinalizedKafkaResponse>(workflowDepositFinalizedResponseTopic, workflowDepositFinalizedKafkaResponse), null);
+            })
+            .as(kafkaSenderForWorkflowDepositFinalizedResponse::send)
             .subscribe();
     }
 
