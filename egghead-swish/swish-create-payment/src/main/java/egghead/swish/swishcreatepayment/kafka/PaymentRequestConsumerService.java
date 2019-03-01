@@ -87,24 +87,25 @@ public class PaymentRequestConsumerService {
                 Tuples.of(swishDepositKafkaRequest, receiverOffset, depositOrder, createPaymentRequestResponse));
     }
 
-    private Flux<RetrievePaymentResponse> pollSwishPaymentStatus(String location) {
+    private Mono<RetrievePaymentResponse> pollSwishPaymentStatus(String location) {
 
         // TODO correct scheduler
         Scheduler scheduler = Schedulers.elastic();
 
         // Wait 5 seconds before starting. Then we poll every 2 seconds
-        Flux<Long> interval = Flux.interval(Duration.ofSeconds(5), Duration.ofSeconds(2));
-
-        return Flux.from(interval)
+        return Flux.interval(Duration.ofSeconds(5), Duration.ofSeconds(2))
             .flatMap(count -> swishApi.callRetrievePayment(scheduler, location))
+            .skipWhile(retrievePaymentResponse -> retrievePaymentResponse.getStatus() == SwishStatusCode.CREATED)
+            /*
             .filter(retrievePaymentResponse -> {
                 return retrievePaymentResponse.getStatus() != SwishStatusCode.CREATED;
             })
+            */
+            .next()
             // Poll for 15 seconds.
             .take(Duration.ofSeconds(15))
-            .take(1)
             .doOnSubscribe(subscription -> LOGGER.info("Subscribing"))
-            .doOnComplete(() -> LOGGER.info("Done with poll"));
+            .doOnSuccess(retrievePaymentResponse -> LOGGER.info("Done with poll"));
     }
 
     private <K, V> Flux<ReceiverRecord<K, V>> setupReceiverListener(ReceiverOptions<K, V> receiverOptions) {
@@ -138,8 +139,7 @@ public class PaymentRequestConsumerService {
                 DepositOrderResponse depositOrderResponse = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT3();
                 CreatePaymentRequestResponse createPaymentRequestResponse = swishDepositKafkaRequestOffsetDepositOrderAndSwishPaymentRequest.getT4();
 
-
-                Flux<RetrievePaymentResponse> retrievePaymentResponseFlux = pollSwishPaymentStatus(createPaymentRequestResponse.getLocation());
+                Mono<RetrievePaymentResponse> retrievePaymentResponseFlux = pollSwishPaymentStatus(createPaymentRequestResponse.getLocation());
                 retrievePaymentResponseFlux.subscribe();
                 return retrievePaymentResponseFlux
                     .map(retrievePaymentResponse -> Tuples.of(swishDepositKafkaRequest, retrievePaymentResponse));
